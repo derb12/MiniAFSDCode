@@ -162,7 +162,7 @@ class Controller:
         self.readTempData = Event()
         self.cache_folder = get_save_location()
         self.log_folder = self.cache_folder.joinpath('Logs')
-        self.log_folder.mkdir(exist_ok=True)
+        self.log_folder.mkdir(exist_ok=True, parents=True)
 
         formatter = logging.Formatter('%(message)s')
         self.logger = logging.getLogger('mini-afsd')
@@ -205,7 +205,7 @@ class Controller:
     @cache_folder.setter
     def cache_folder(self, folder):
         """
-        Sets the cache folder and converts it to a Path.
+        Sets the cache folder and creates it if needed.
 
         Parameters
         ----------
@@ -213,6 +213,7 @@ class Controller:
             The folder path for saving unsaved data files.
         """
         self._cache_folder = Path(folder)
+        self._cache_folder.mkdir(exist_ok=True, parents=True)
 
     def update_serial_port(self, port=None):
         """
@@ -348,7 +349,6 @@ class Controller:
         """Caches force and thermocouple data when done collecting data to ensure data recovery."""
         combinedData = self.return_data()
         if combinedData is not None:
-            self._cache_folder.mkdir(exist_ok=True, parents=True)
             try:
                 output_file = self.cache_folder.joinpath(
                     datetime.now().strftime('%Y-%m-%d %H-%M-%S.csv')
