@@ -134,6 +134,13 @@ Alternatively, mini_afsd can be used from a Python file by doing the following:
     Controller().run()
 
 
+Configuring LabJack
+-------------------
+
+For determining proper addresses to connections on the LabJack, use
+the Kipling software included with LJM to find the pin addresses within
+the "Register Matrix" section.
+
 Contributing
 ------------
 

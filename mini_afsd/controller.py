@@ -163,6 +163,7 @@ class Controller:
         self.cache_folder = get_save_location()
         self.log_folder = self.cache_folder.joinpath('Logs')
         self.log_folder.mkdir(exist_ok=True, parents=True)
+        self._testing_mode = allow_testing
 
         formatter = logging.Formatter('%(message)s')
         self.logger = logging.getLogger('mini-afsd')

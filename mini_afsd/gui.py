@@ -3,6 +3,7 @@
 
 from collections import deque
 import csv
+from math import nan
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog
@@ -67,6 +68,8 @@ class Gui:
         self.controller = controller
         self.times = tuple(t * 3 for t in range(display_size))
         self.displayData = deque([0] * display_size, maxlen=display_size)
+        self.displayDataTC1 = deque([0] * display_size, maxlen=display_size)
+        self.displayDataTC2 = deque([0] * display_size, maxlen=display_size)
         self.gcode_directory = '/'
         self.confirm_run = confirm_run
 
@@ -592,6 +595,10 @@ class Gui:
 
         self.figure = Figure(figsize=(3, 2), tight_layout=True)
         self.axis = self.figure.add_subplot()
+        self.temperature_axis = None
+        self.temperature_axis = self.axis.twinx()
+        self.temperature_axis.set_ylabel('Temperature (°C)')
+
         self.line = self.axis.plot(self.times, self.displayData)[0]
         self.axis.set_xlabel("Time")
         self.axis.set_ylabel("Force (N)")
@@ -773,6 +780,20 @@ class Gui:
             pady=5, fg="black", bg="#e3f0fa", width=6
         )
         tcTwoLabel.grid(column=1, row=1, in_=tcFrame)
+
+        self.tcConnectButton = tk.Button(
+            text='Connect LabJack',
+            font=("Times New Roman bold", 12),
+            width=15,
+            pady=5,
+            bg="#ff475d",
+            fg='black',
+            relief="raised",
+            command=self.startTC,
+        )
+        self.tcConnectButton.grid(
+            column=0, row=3, columnspan=2, in_=tcFrame, pady=10, padx=10, sticky=tk.EW
+        )
 
         sFrame.columnconfigure(0, weight=1)
         sFrame.rowconfigure(3, weight=1)
@@ -1044,16 +1065,28 @@ class Gui:
         confirmRunWin.grab_set()  # prevent interaction with main window until dialog closes
         confirmRunWin.wm_transient(self.controller.root)  # set dialog above main window
 
-    def display(self, force):
+    def display(self, force, thermocouple1, thermocouple2):
         """
         Updates the GUI with new force data.
 
         """
+        for line in self.temperature_axis.lines:
+            line.remove()
+        for line in self.axis.lines:
+            line.remove()
+
         self.displayData.append(force)
-        # self.line.set_ydata(self.displayData)
-        self.line.remove()
+        self.displayDataTC1.append(thermocouple1)
+        self.displayDataTC2.append(thermocouple2)
+
+        self.temperature_axis.set_prop_cycle(plt.rcParams['axes.prop_cycle'])
+        # plot empty value to advance color cycle so it doesn't overlap with force
+        self.temperature_axis.plot(nan, nan)
         self.axis.set_prop_cycle(plt.rcParams['axes.prop_cycle'])
-        self.line = self.axis.plot(self.times, self.displayData)[0]
+        self.line = self.axis.plot(self.times, self.displayData, label='force')[0]
+        tc_line1 = self.temperature_axis.plot(self.times, self.displayDataTC1, label='TC1')[0]
+        tc_line2 = self.temperature_axis.plot(self.times, self.displayDataTC2, label='TC2')[0]
+        self.axis.legend(handles=[self.line, tc_line1, tc_line2])
         self.canvas.draw_idle()
 
     def sendCode(self, code, wait_in_queue):
@@ -1102,3 +1135,12 @@ class Gui:
             self.sendCode(b'\x18', False),
             self.sendCode(b'$X', False),
             self.sendCode('G92 X{0} Y{1} Z{2} A{3}'.format(*current_position).encode(), False)
+
+    def startTC(self):
+        """Attempts to connect to LabJack thermocouples."""
+        if self.controller.labjack_handler.labjackHandle is None:
+            self.controller.labjack_handler.start_threads(
+                allow_dummy_thread=self.controller._testing_mode
+            )
+        if self.controller.labjack_handler.labjackHandle is not None:
+            self.saveDataBut.configure(fg="grey", command='')
