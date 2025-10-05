@@ -151,7 +151,7 @@ Commands sent from the GUI to FluidNC for control of the mill can be split into 
    supported by FluiNC.
 
 2) Codes to FluiNC or Grbl. These can include things liking homing ("$H"), status query ("?"), or
-   soft reset ("\x18" == "CTRL+X"). When adding new commands under this category, it is recommended
+   soft reset ("0x18" == "CTRL+X"). When adding new commands under this category, it is recommended
    to add a comment as to what these commands are doing since it is not immediately clear and makes
    maintenance difficult. A full listing of commands can be found at
    http://wiki.fluidnc.com/en/features/commands_and_settings.
