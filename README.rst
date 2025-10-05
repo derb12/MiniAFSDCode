@@ -141,6 +141,21 @@ For determining proper addresses to connections on the LabJack, use
 the Kipling software included with LJM to find the pin addresses within
 the "Register Matrix" section.
 
+Sending Commands to FluidNC
+---------------------------
+
+Commands sent from the GUI to FluidNC for control of the mill can be split into 2 categories:
+
+1) G-Code (and subsequent M-Codes, etc.): These are prefixed by "G", "M", etc., and follow their
+   standard usage. See http://wiki.fluidnc.com/en/features/supported_gcodes for the G-Codes
+   supported by FluiNC.
+
+2) Codes to FluiNC or Grbl. These can include things liking homing ("$H"), status query ("?"), or
+   soft reset ("\x18" == "CTRL+X"). When adding new commands under this category, it is recommended
+   to add a comment as to what these commands are doing since it is not immediately clear and makes
+   maintenance difficult. A full listing of commands can be found at
+   http://wiki.fluidnc.com/en/features/commands_and_settings.
+
 Contributing
 ------------
 

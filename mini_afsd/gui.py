@@ -1132,8 +1132,8 @@ class Gui:
                 float(self.aAbsVar.get()) - current_offsets[3],
             )
 
-            self.sendCode(b'\x18', False),
-            self.sendCode(b'$X', False),
+            self.sendCode(b'\x18', False),  # \x18 == 0x18 == CTRL+X -> Soft reset
+            self.sendCode(b'$X', False),  # alarm disable
             self.sendCode('G92 X{0} Y{1} Z{2} A{3}'.format(*current_position).encode(), False)
 
     def startTC(self):
