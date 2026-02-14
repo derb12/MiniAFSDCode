@@ -175,7 +175,7 @@ class LabjackHandler:
                     except KeyboardInterrupt:
                         break
                     except Exception as ex:
-                        print(ex)
+                        self.controller.logger.debug(ex)
                         if type(ex).__name__ != "LJMError":
                             break
 

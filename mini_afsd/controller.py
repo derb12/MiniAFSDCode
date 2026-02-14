@@ -36,15 +36,18 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 """
 
+from collections import defaultdict
 import csv
 from datetime import datetime
-import itertools
 import logging
+from math import nan
 import os
 from pathlib import Path
 import sys
-from threading import Event
+import time
+from threading import Event, Thread
 import tkinter as tk
+import traceback
 
 import serial
 from serial.tools import list_ports
@@ -187,6 +190,8 @@ class Controller:
         self.serial_processor = SerialProcessor(self, None, skip_home, allow_testing)
         self.labjack_handler = LabjackHandler(self, averaged_points, allow_testing)
 
+        self.data = None
+
         if connect_serial:
             matching_ports = list(list_ports.grep(port_regex))
             if len(matching_ports) == 1:
@@ -279,7 +284,7 @@ class Controller:
 
     def on_closing(self):
         """Tries to save unsaved data before closing."""
-        if not self.labjack_handler.timeData:
+        if not self.data:
             self.closeAll()
         else:
             askSaveWin = tk.Toplevel(self.root, takefocus=True)
@@ -325,26 +330,13 @@ class Controller:
 
     def return_data(self):
         """Collects the current force and thermocouple data."""
-        if self.labjack_handler.labjackHandle is not None:
-            combinedData = itertools.chain.from_iterable((
-                [['Time (s)', 'Force (N)', 'Thermocouple 1 (degrees C)',
-                  'Thermocouple 2 (degrees C)']],
-                zip(
-                    self.labjack_handler.timeData,
-                    self.labjack_handler.forceData,
-                    self.labjack_handler.TC_one_Data,
-                    self.labjack_handler.TC_two_Data
-                )
-            ))
-        else:
-            combinedData = None  # reached if not connected to anything
-
-        return combinedData
+        return self.data
 
     def clear_data(self):
         """Clears all force and thermocouple data from the serial port and LabJack."""
         self.serial_processor.clear_data()
         self.labjack_handler.clear_data()
+        self.data = None
 
     def save_temp_file(self):
         """Caches force and thermocouple data when done collecting data to ensure data recovery."""
@@ -354,11 +346,12 @@ class Controller:
                 output_file = self.cache_folder.joinpath(
                     datetime.now().strftime('%Y-%m-%d %H-%M-%S.csv')
                 )
-                with open(output_file, 'w', newline='') as f:
-                    writer = csv.writer(f)
-                    writer.writerows(combinedData)
+                self.write_output(output_file, combinedData)
             except PermissionError:
                 pass  # silently ignore permission error when caching data
+            except Exception:
+                self.logger.warning('WARNING: Failed to save temporary data file.')
+                self.logger.warning(traceback.format_exc())
             else:
                 # try to remove all but the newest 10 files
                 # default sort works since file names use ISO8601 date format
@@ -367,3 +360,50 @@ class Controller:
                         old_file.unlink()
                     except Exception:
                         pass
+
+    def write_output(self, output_file, data):
+        """Defines how output data should be saved.
+
+        Parameters
+        ----------
+        output_file : str or os.Pathlike
+            The file location to save the output.
+        data : dict[str, list]
+            The data to be saved. Should be a dictionary containing the file headers as
+            keys and relevant data as lists.
+
+        """
+        with open(output_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(data.keys())
+            writer.writerows(zip(*data.values()))
+
+    def start_collection_thread(self):
+        """Spawns a thread for collecting machine data."""
+        self.col_thread = Thread(target=self.collection_thread, daemon=True)
+        self.col_thread.start()
+
+    def collection_thread(self):
+        """Collects machine position and Labjack data for saving later."""
+        self.data = defaultdict(list)
+        start_time = datetime.now()
+        while self.collecting.is_set():
+            now = datetime.now()
+            self.data['Date'].append(now.strftime('%Y-%m-%d'))
+            self.data['Time'].append(now.strftime('%H:%M:%S'))
+            self.data['Relative_Time_s'].append((now - start_time).seconds)
+            # have to cast position values as floats to get rid of "+" signs
+            self.data['X_Pos_mm'].append(float(self.gui.xRelVar.get()))
+            self.data['Y_Pos_mm'].append(float(self.gui.yRelVar.get()))
+            self.data['Z_Pos_mm'].append(float(self.gui.zRelVar.get()))
+            self.data['Actuator_Pos_mm'].append(float(self.gui.aRelVar.get()))
+            if self.labjack_handler.labjackHandle is not None and self.labjack_handler.timeData:
+                self.data['Actuator_Force_N'].append(self.labjack_handler.forceData[-1])
+                self.data['Thermocouple_1_C'].append(self.labjack_handler.TC_one_Data[-1])
+                self.data['Thermocouple_2_C'].append(self.labjack_handler.TC_two_Data[-1])
+            else:
+                self.data['Actuator_Force_N'].append(nan)
+                self.data['Thermocouple_1_C'].append(nan)
+                self.data['Thermocouple_2_C'].append(nan)
+
+            time.sleep(1)   # collect every 1 second

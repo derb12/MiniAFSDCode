@@ -7,6 +7,7 @@ from math import nan
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog
+import traceback
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
@@ -846,13 +847,12 @@ class Gui:
         if not filename:
             return
         try:
-            with open(filename, 'w', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerows(data)
+            self.controller.write_output(filename, data)
         except PermissionError:
-            print("File is currently open")
+            self.controller.logger.warning('WARNING: Could not save, file is currently open!')
         except Exception:
-            print("There was an error saving the file.")
+            self.controller.logger.warning('WARNING: Error saving the file!')
+            self.controller.logger.warning(traceback.format_exc())
         else:  # only clear data when the save is successful
             self.clearAllData(source)
             self.clearDataBut.configure(fg="grey", command='')
@@ -861,11 +861,12 @@ class Gui:
     def startStopData(self):
         """Toggles data collection events and GUI elements."""
         if "Start" in self.startStopDataBut["text"]:
-            if self.controller.labjack_handler.timeData:
+            if self.controller.data:
                 # have unsaved data, so cache it and then erase data
                 self.controller.save_temp_file()
                 self.controller.clear_data()
             self.controller.collecting.set()
+            self.controller.start_collection_thread()
             self.startStopDataBut.config(text="Stop Data Collection", bg="#ff475d")
 
         else:
@@ -969,16 +970,17 @@ class Gui:
                     if int(event.type) == 3:
                         self.sendCode(gcode.upper().encode(), False)
                 except Exception:
-                    print("There was an exception?")
+                    self.controller.logger.debug("There was an exception?")
+                    self.controller.logger.debug(traceback.format_exc())
             else:
-                print("Machine Must Be Started First!")
+                self.controller.logger.debug("Machine Must Be Started First!")
 
     def browseFiles(self):
         """Browses files for running GCode."""
         filename = filedialog.askopenfilename(
             initialdir=self.gcode_directory,
             title="Select a File",
-            filetypes=(("GCode Files", "*.gcode*"), ("Text files", "*.txt*"), ("All files", "*.*")),
+            filetypes=(("Text files", "*.txt*"), ("GCode Files", "*.gcode*"), ("All files", "*.*")),
         )
         if filename:
             self.gcode_directory = Path(filename).parent
@@ -1002,14 +1004,16 @@ class Gui:
             self.write_file_to_buffer(filename)
 
     def write_file_to_buffer(self, filename):
+        """Adds the GCode from a file to the buffer to send to the machine."""
         with open(filename, 'r') as f:
             self.controller.serial_processor.espBuffer = [line.rstrip('\n').encode() for line in f]
         self.controller.serial_processor.espTypeBuffer = (
             [1] * len(self.controller.serial_processor.espBuffer)
         )
-        print(self.controller.serial_processor.espTypeBuffer)
+        self.controller.logger.debug(self.controller.serial_processor.espTypeBuffer)
 
     def set_cofirm_run(self, set_run, confirm_run):
+        """Ensures data collection popup shows when running if not set yet."""
         if set_run and confirm_run:
             self.confirm_run = None
             self.startStopData()
@@ -1019,6 +1023,7 @@ class Gui:
             self.confirm_run = False
 
     def confirm_run_with_data(self, filename):
+        """Adds a popup to ensure data collection is started before running a GCode file."""
         confirmRunWin = tk.Toplevel(self.controller.root, takefocus=True)
         confirmRunWin.title("Running without saving")
         askSaveLabel = tk.Label(
