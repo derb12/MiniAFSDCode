@@ -156,6 +156,25 @@ Commands sent from the GUI to FluidNC for control of the mill can be split into 
    maintenance difficult. A full listing of commands can be found at
    http://wiki.fluidnc.com/en/features/commands_and_settings.
 
+Log Files
+---------
+
+While the program is running, it is set up to automatically log messages sent and received from
+the mill for later reference/debugging. In addition, if data collection was turned on and the
+data was not subsequently saved, the data is automatically saved in order to prevent losing data.
+
+The folder where these logs and data files are saved can be found by running the following within
+a Python file:
+
+.. code-block:: python
+
+    from mini_afsd.controller import get_save_location
+
+    print(get_save_location())
+
+On Windows, this folder location likely corresponds to the local AppData folder,
+ie. ``%localappdata%/mini_afsd``.
+
 Contributing
 ------------
 
@@ -177,4 +196,4 @@ mini_afsd is all rights reserved. For more information, refer to the license_.
 Author
 ------
 
-* Ryan Gottwald <insert_email_here>
+* Ryan Gottwald
