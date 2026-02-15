@@ -4,9 +4,6 @@ mini_afsd
 
 mini_afsd is a program for controlling a miniturized additive friction stir deposition (AFSD) machine.
 
-* For Python 3.7+
-* Source Code: https://github.com/RyTheGuy355/MiniAFSDCode
-
 
 .. contents:: **Contents**
     :depth: 1
@@ -48,7 +45,7 @@ https://oemdrivers.com/usb-cp2104-usb-to-uart-driver.
 Python Dependencies
 ^^^^^^^^^^^^^^^^^^^
 
-mini_afsd requires `Python <https://python.org>`_ version 3.7 or later
+mini_afsd requires `Python <https://python.org>`_ version 3.10 or later
 and the following Python libraries:
 
 * `labjack-ljm <https://pypi.org/project/labjack-ljm/>`_
@@ -174,15 +171,6 @@ a Python file:
 
 On Windows, this folder location likely corresponds to the local AppData folder,
 ie. ``%localappdata%/mini_afsd``.
-
-Contributing
-------------
-
-Contributions are welcomed and greatly appreciated. For information on
-submitting bug reports, pull requests, or general feedback, please refer
-to the `contributing guide`_.
-
-.. _contributing guide: https://github.com/RyTheGuy355/MiniAFSDCode/tree/main/docs/contributing.rst
 
 
 License

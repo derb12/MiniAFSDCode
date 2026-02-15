@@ -7,6 +7,7 @@ development packages by running:
 
 
 To bump the version:
+
 1)	Navigate to the project folder (MiniAFSDCode)
 2)	Run the following command:
 
@@ -18,6 +19,7 @@ where [version] is major if moving from 1.0.0 to 2.0.0, minor if moving from 1.0
 
 
 To create the source file (.tar.gz) and the wheel for uploading to pypi:
+
 1)	Navigate to the project folder (MiniAFSDCode)
 2)	Run the following command:
 
@@ -27,6 +29,7 @@ To create the source file (.tar.gz) and the wheel for uploading to pypi:
 
 
 To upload to pypi:
+
 1)	Navigate to the project folder (MiniAFSDCode)
 2)	Run the following command:
 
