@@ -259,10 +259,25 @@ class SerialProcessor:
         total_message = message.decode().split('|')
         feed_speed = None
         spindle_speed = None
-        if len(total_message) < 2:  # accidently received b'ok'
+        if len(total_message) < 2:  # accidentally received b'ok'
             return
-        # message is sent as
-        # b'<state|machine positions: x, y, z, a|BF:buffer size|FS:?,?|Work positions(optional):x,y,z,a>'
+        # See https://github.com/gnea/grbl/wiki/Grbl-v1.1-Interface#real-time-status-reports for detailed
+        # explanations of the status report sent by the machine
+        #
+        # A typical message is received as
+        # b'<state|MPos:x,y,z,a|BF:#,#|FS:#,#|WCO:x,y,z,a>'
+        # where "state" can be Idle, Run, Hold, Jog, Alarm, Door, Check, Home, Sleep,
+        # and possible headers including:
+        # MPos == machine position
+        # WCO == work coordinate offsets
+        # WPos == work position, where WPos = MPos - WCO
+        # Bf == machine buffer state; first value denoates available machine buffer (ie. how
+        # many commands it can receive)
+        # Ov == override values; typically Ov:100,100,100; denotes override values for feed (G1,
+        # G2, G3 motion), rapid (G0 motion), and spindle, respectively, in percentages
+        # FS (or just F) == current feed rate (F) and potentially spindle speed
+        # Pn == input pin states; ignored here
+        # Note that not all headers may be included in each message
         total_message[0] = total_message[0].lstrip('<')
         total_message[-1] = total_message[-1].rstrip('>')
         old_state = self.state
@@ -270,7 +285,6 @@ class SerialProcessor:
             if ':' not in entry:
                 self.state = entry
             else:
-                # headers are 'MPos', 'Bf', 'FS', 'WCO', 'Ov', 'Pn'
                 try:
                     header, values = entry.split(':')
                 except ValueError:  # message has multiple : at startup
@@ -282,9 +296,7 @@ class SerialProcessor:
                     work_position = [float(val) for val in values.split(',')]
                 elif header == 'Bf':
                     buffer_length = int(values.split(',')[0])
-                elif header == 'Ov':  # typically Ov:100,100,100
-                    # override values for feed (G1,G2,G3 motion), rapid (G0 motion), and spindle
-                    # in percentages
+                elif header == 'Ov':
                     feed_speed, _, spindle_speed = [int(val) for val in values.split(',')]
         # print(message.decode())
         if machine_position is not None:
@@ -340,7 +352,7 @@ class SerialProcessor:
         self.state_exact.set()
 
     def status_update(self):
-        """Sends and receives querries to the port to receive the position and state of the mill."""
+        """Sends and receives queries to the port to receive the position and state of the mill."""
         while not self.close_port.wait(timeout=0.5):
             if not self.controller.running.wait(timeout=0.5):
                 continue
