@@ -1,17 +1,34 @@
 # -*- coding: utf-8 -*-
 """The User Interface class for interacting with the mill."""
 
-from collections import deque
-import csv
 from math import nan
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog
 import traceback
 
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
+import numpy as np
+
+
+class Toolbar(NavigationToolbar2Tk):
+    """Custom toolbar to better display hover text."""
+
+    def set_message(self, message):
+        """Sets the hover text on the toolbar."""
+        # expected message for the plot should be resembling:
+        # "(x, y) = (−5.48, 644.) | (−5.48, 142.)"
+        # correspondong to x and y values for force and temperature axes, respectively.
+        split_message = message.split('|')
+        if len(split_message) < 2:  # empty text
+            final_message = message
+        else:
+            x, temperature = split_message[-1].strip().strip('()').split(',')
+            force = split_message[0].split('=')[-1].strip().strip('()').split(',')[-1]
+            final_message = f't, F, T = {x},{force},{temperature}'
+        return super().set_message(final_message)
 
 
 class Gui:
@@ -23,11 +40,6 @@ class Gui:
     controller : Controller
         The Controller object that allows communication between the GUI and the
         serial port and LabJack.
-    times : tuple
-        The time data to use for plotting the temperature versus time graphs. Has
-        a fixed length of `display_data`.
-    displayData : collections.deque
-        The temperature data to use for display. Has a fixed length of `display_data`.
     aAbsVar : tkinter.StringVar
         The label for the absolute position in the actuator direction.
     aRelVar : tkinter.StringVar
@@ -52,7 +64,7 @@ class Gui:
         The button for enabling XY movement.
     """
 
-    def __init__(self, controller, display_size=140, confirm_run=True):
+    def __init__(self, controller, confirm_run=True, show_average=False):
         """
         Initializes the user interface.
 
@@ -60,19 +72,18 @@ class Gui:
         ----------
         controller : Controller
             The controller object for the GUI.
-        display_size : int, optional
-            The number of data points to display when plotting. Default is 140.
         confirm_run : bool, optional
             If True (default), will ask for confirmation for running a GCode file if
             data collection is not turned on; If False, will directly run the GCode.
+        show_average : bool, optional
+            If True, will display the rolling average of connected thermocouples within
+            the GUI's plot. Default is False.
+
         """
         self.controller = controller
-        self.times = tuple(t * 3 for t in range(display_size))
-        self.displayData = deque([0] * display_size, maxlen=display_size)
-        self.displayDataTC1 = deque([0] * display_size, maxlen=display_size)
-        self.displayDataTC2 = deque([0] * display_size, maxlen=display_size)
         self.gcode_directory = '/'
         self.confirm_run = confirm_run
+        self.show_average = show_average
 
         self.createMainFrames()
         self.createTraverseFrame()
@@ -458,9 +469,13 @@ class Gui:
             text='Spindle', font=('Times New Roman', 18), fg="black", bg="#e3f0fa", width=5, pady=10,
         ).grid(column=0, row=1, padx=3, in_=overrideFrame)
 
-        self.feed_var = tk.StringVar(value='100%')
+        tk.Label(
+            text='RPM', font=('Times New Roman', 18), fg="black", bg="#e3f0fa", width=5, pady=10,
+        ).grid(column=0, row=2, padx=3, in_=overrideFrame)
+
+        self.feed_override = tk.StringVar(value='100%')
         feed_label = tk.Label(
-            textvariable=self.feed_var,
+            textvariable=self.feed_override,
             width=5,
             font=("Times New Roman", 18),
             fg="black",
@@ -511,9 +526,9 @@ class Gui:
         )
         feed_plus10_But.grid(column=5, row=0, in_=overrideFrame, padx=3)
 
-        self.spindle_var = tk.StringVar(value='100%')
+        self.spindle_override = tk.StringVar(value='100%')
         spindle_label = tk.Label(
-            textvariable=self.spindle_var,
+            textvariable=self.spindle_override,
             width=5,
             font=("Times New Roman", 18),
             fg="black",
@@ -564,6 +579,19 @@ class Gui:
         )
         spindle_plus10_But.grid(column=5, row=1, in_=overrideFrame, pady=5)
 
+        self.spindle_speed = tk.StringVar(value='0')
+        spindle_label = tk.Label(
+            textvariable=self.spindle_speed,
+            width=5,
+            font=("Times New Roman", 18),
+            fg="black",
+            bg="#EEE",
+            relief="groove",
+            bd=1,
+            pady=6,
+        )
+        spindle_label.grid(column=1, row=2, in_=overrideFrame)
+
         tFrame.columnconfigure(0, weight=1)
         tFrame.rowconfigure(0, weight=1)
         tFrame.rowconfigure(1, weight=1)
@@ -596,21 +624,24 @@ class Gui:
 
         self.figure = Figure(figsize=(3, 2), tight_layout=True)
         self.axis = self.figure.add_subplot()
-        self.temperature_axis = None
         self.temperature_axis = self.axis.twinx()
         self.temperature_axis.set_ylabel('Temperature (°C)')
 
-        self.line = self.axis.plot(self.times, self.displayData)[0]
-        self.axis.set_xlabel("Time")
+        self.line = self.axis.plot([-60, 0], [nan, nan])[0]
+        self.axis.set_xlabel("time (s)")
         self.axis.set_ylabel("Force (N)")
-        self.axis.set_xticklabels([])
-        self.axis.set_xticks([])
 
         self.canvas = FigureCanvasTkAgg(self.figure)
         self.canvas.get_tk_widget().grid(
-            column=0, row=0, in_=displayFrame, sticky=tk.NSEW
+            column=0, row=1, in_=displayFrame, sticky=tk.NSEW
         )
-        self.canvas.draw_idle()
+        self.canvas.draw()
+        self.plot_toolbar = Toolbar(self.canvas, pack_toolbar=False)
+        self.plot_toolbar.update()
+        self.plot_toolbar.grid(column=0, row=0, in_=displayFrame, sticky=tk.NSEW)
+
+        displayFrame.rowconfigure(0, weight=1)
+        displayFrame.rowconfigure(1, weight=9)
 
         gCodeLabel = tk.Label(
             text="Enter GCode:",
@@ -815,7 +846,7 @@ class Gui:
     def sendStartStop(self):
         """Sends the code to turn the mill on and off."""
         if not self.controller.running.is_set():
-            # b'$10=3' sets the Grbl data that is sent back when querried with b'?'
+            # b'$10=3' sets the Grbl data that is sent back when queried with b'?'
             self.sendCode(b'$10=3', False)
             self.sBut.config(text="Stop Mill", bg="#fc4747")
             self.controller.running.set()
@@ -842,7 +873,7 @@ class Gui:
             self.clearAllData(source)
             return
 
-        fileTypes = [('CSV', '*.csv'), ('Text', '*.txt'), ('All Files', '*.*')]
+        fileTypes = [('CSV', '*.csv'), ('All Files', '*.*')]
         filename = filedialog.asksaveasfilename(filetypes=fileTypes, defaultextension=fileTypes)
         if not filename:
             return
@@ -871,7 +902,7 @@ class Gui:
 
         else:
             self.controller.collecting.clear()
-            if not self.controller.labjack_handler.timeData:
+            if not self.controller.data:
                 self.clearAllData()
             else:
                 askSaveWin = tk.Toplevel(self.controller.root, takefocus=True)
@@ -928,7 +959,7 @@ class Gui:
 
     def clearDataPrompt(self):
         """Asks to save data when closing the window."""
-        if not self.controller.labjack_handler.timeData:
+        if not self.controller.data:
             self.clearAllData()
         else:
             askSaveWin = tk.Toplevel(self.controller.root, takefocus=True)
@@ -1070,9 +1101,17 @@ class Gui:
         confirmRunWin.grab_set()  # prevent interaction with main window until dialog closes
         confirmRunWin.wm_transient(self.controller.root)  # set dialog above main window
 
-    def display(self, force, thermocouple1, thermocouple2):
-        """
-        Updates the GUI with new force data.
+    def display(self, plot_handler, text_handler):
+        """Updates the plot with new force and thermocouple values.
+
+        Parameters
+        ----------
+        plot_handler : DataHandler
+            The object that contains all thermocouple and force measurements for plotting,
+            as well as their recorded times.
+        text_handler : DataHandler
+            The object that contains all thermocouple and force measurements for updating
+            the thermocouple rolling average text and potentially plots.
 
         """
         for line in self.temperature_axis.lines:
@@ -1080,17 +1119,36 @@ class Gui:
         for line in self.axis.lines:
             line.remove()
 
-        self.displayData.append(force)
-        self.displayDataTC1.append(thermocouple1)
-        self.displayDataTC2.append(thermocouple2)
+        times = np.array(plot_handler.times)
+        current_time = times[-1]
+        # re-scale the times so that they plot relative to the last measurement
+        times = times - current_time
+
+        # update temperature text in the gui
+        self.tcOneVariable.set(f'{text_handler.avg_tc1:.1f} °C')
+        self.tcTwoVariable.set(f'{text_handler.avg_tc2:.1f} °C')
 
         self.temperature_axis.set_prop_cycle(plt.rcParams['axes.prop_cycle'])
         # plot empty value to advance color cycle so it doesn't overlap with force
         self.temperature_axis.plot(nan, nan)
         self.axis.set_prop_cycle(plt.rcParams['axes.prop_cycle'])
-        self.line = self.axis.plot(self.times, self.displayData, label='force')[0]
-        tc_line1 = self.temperature_axis.plot(self.times, self.displayDataTC1, label='TC1')[0]
-        tc_line2 = self.temperature_axis.plot(self.times, self.displayDataTC2, label='TC2')[0]
+        self.line = self.axis.plot(times, plot_handler.forces, label='force')[0]
+        tc_line1 = self.temperature_axis.plot(times, plot_handler.thermocouple_1, label='TC1')[0]
+        tc_line2 = self.temperature_axis.plot(times, plot_handler.thermocouple_2, label='TC2')[0]
+
+        if self.show_average:
+            # plot lines corresponding to the average values
+            self.temperature_axis.plot(
+                [text_handler.times[0] - current_time, 0],
+                [text_handler.avg_tc1, text_handler.avg_tc1],
+                color=tc_line1.get_color(), linestyle='--'
+            )
+            self.temperature_axis.plot(
+                [text_handler.times[0] - current_time, 0],
+                [text_handler.avg_tc2, text_handler.avg_tc2],
+                color=tc_line2.get_color(), linestyle='--'
+            )
+
         self.axis.legend(handles=[self.line, tc_line1, tc_line2])
         self.canvas.draw_idle()
 

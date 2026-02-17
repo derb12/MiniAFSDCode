@@ -49,6 +49,7 @@ mini_afsd requires `Python <https://python.org>`_ version 3.10 or later
 and the following Python libraries:
 
 * `labjack-ljm <https://pypi.org/project/labjack-ljm/>`_
+* `NumPy <https://numpy.org>`_
 * `matplotlib <https://pypi.org/project/matplotlib/>`_ (>=3.4)
 * `pyserial <https://pypi.org/project/pyserial/>`_
 

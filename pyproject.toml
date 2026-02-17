@@ -45,6 +45,7 @@ keywords = [
 requires-python = ">=3.7"
 dependencies = [
     "labjack-ljm",
+    "numpy",
     "matplotlib>=3.4",
     "pyserial",
 ]

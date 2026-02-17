@@ -40,7 +40,6 @@ from collections import defaultdict
 import csv
 from datetime import datetime
 import logging
-from math import nan
 import os
 from pathlib import Path
 import sys
@@ -78,6 +77,7 @@ def get_save_location():
     ----------
     https://stackoverflow.com/questions/1024114/location-of-ini-config-files-in-linux-unix,
     https://specifications.freedesktop.org/basedir-spec/latest/
+
     """
     path = None
     if sys.platform.startswith('win'):  # Windows
@@ -126,22 +126,14 @@ class Controller:
         is the os-dependent output of `get_save_location`.
     """
 
-    def __init__(self, xyStepsPerMil=40, xyPulPerStep=2, aStepsPerMil=1020,
-                 aPulPerStep=4, port_regex='(CP21)', connect_serial=True, confirm_run=True,
-                 skip_home=False, averaged_points=10, allow_testing=False):
+    def __init__(self, port_regex='(CP21)', connect_serial=True, confirm_run=True,
+                 skip_home=False, allow_testing=False, graph_time=60., collection_time=1.,
+                 labjack_polling=0.2, tc_time=5., show_average=False):
         """
         Initializes the object.
 
         Parameters
         ----------
-        xyStepsPerMil : int, optional
-            _description_. Default is 40.
-        xyPulPerStep : int, optional
-            _description_. Default is 2.
-        aStepsPerMil : int, optional
-            _description_. Default is 1020.
-        aPulPerStep : int, optional
-            _description_. Default is 4.
         port_regex : str, optional
             The regular expression to use for searching for the port to use. Default
             is '(CP21)'.
@@ -157,9 +149,26 @@ class Controller:
             be ready to send commands. If False (default), b'$X' or b'$H' (home)
             will have to be sent manually through the serial port to begin using
             the mill.
+        allow_testing : bool, optional
+            If True, will spawn an emulators of the serial port and LabJack for testing
+            purposes if no actual serial port or LabJack is found upon start-up. Default
+            is False, which will not spawn emulators.
+        graph_time : float, optional
+            The time in seconds to retain collected force and temperature data for plotting.
+            Default is 60 seconds.
+        collection_time : float, optional
+            The time in seconds for between data points when saving measured data to a file.
+            Default is 1 second.
+        labjack_polling : float, optional
+            The time in seconds between polling the LabJack. Default is 0.2 seconds.
+        tc_time : float, optional
+            The time in seconds for the rolling average of the thermocouple values
+            reported within the GUI text. Default is 5 seconds.
+        show_average : bool, optional
+            If True, will display the rolling average of connected thermocouples within
+            the GUI's plot. Default is False.
+
         """
-        self.xyPulPerMil = xyStepsPerMil * xyPulPerStep
-        self.aPulPerMil = aStepsPerMil * aPulPerStep
         self.running = Event()
         self.collecting = Event()
         self.readTempData = Event()
@@ -167,6 +176,8 @@ class Controller:
         self.log_folder = self.cache_folder.joinpath('Logs')
         self.log_folder.mkdir(exist_ok=True, parents=True)
         self._testing_mode = allow_testing
+        self.collection_time = collection_time
+        self.data = None
 
         formatter = logging.Formatter('%(message)s')
         self.logger = logging.getLogger('mini-afsd')
@@ -185,12 +196,17 @@ class Controller:
 
         self.root = tk.Tk()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-        self.gui = Gui(self, confirm_run=confirm_run)
+        self.gui = Gui(
+            self, confirm_run=confirm_run, show_average=show_average
+        )
 
-        self.serial_processor = SerialProcessor(self, None, skip_home, allow_testing)
-        self.labjack_handler = LabjackHandler(self, averaged_points, allow_testing)
-
-        self.data = None
+        self.serial_processor = SerialProcessor(
+            self, port=None, skip_home=skip_home, allow_testing=allow_testing
+        )
+        self.labjack_handler = LabjackHandler(
+            self, tc_time=tc_time, graph_time=graph_time, polling=labjack_polling,
+            collection_time=collection_time, allow_testing=allow_testing
+        )
 
         if connect_serial:
             matching_ports = list(list_ports.grep(port_regex))
@@ -334,8 +350,6 @@ class Controller:
 
     def clear_data(self):
         """Clears all force and thermocouple data from the serial port and LabJack."""
-        self.serial_processor.clear_data()
-        self.labjack_handler.clear_data()
         self.data = None
 
     def save_temp_file(self):
@@ -370,7 +384,8 @@ class Controller:
             The file location to save the output.
         data : dict[str, list]
             The data to be saved. Should be a dictionary containing the file headers as
-            keys and relevant data as lists.
+            keys and relevant data as lists. See `collection_thread` for how this data should
+            look like.
 
         """
         with open(output_file, 'w', newline='') as f:
@@ -391,19 +406,16 @@ class Controller:
             now = datetime.now()
             self.data['Date'].append(now.strftime('%Y-%m-%d'))
             self.data['Time'].append(now.strftime('%H:%M:%S'))
-            self.data['Relative_Time_s'].append((now - start_time).seconds)
+            self.data['time_step_s'].append((now - start_time).total_seconds())
+            self.data['Spindle_Speed_RPM'].append(float(self.gui.spindle_speed.get()))
+            self.data['Feed_Rate_Override'].append(float(self.gui.feed_override.get().strip('%')))
             # have to cast position values as floats to get rid of "+" signs
             self.data['X_Pos_mm'].append(float(self.gui.xRelVar.get()))
             self.data['Y_Pos_mm'].append(float(self.gui.yRelVar.get()))
             self.data['Z_Pos_mm'].append(float(self.gui.zRelVar.get()))
             self.data['Actuator_Pos_mm'].append(float(self.gui.aRelVar.get()))
-            if self.labjack_handler.labjackHandle is not None and self.labjack_handler.timeData:
-                self.data['Actuator_Force_N'].append(self.labjack_handler.forceData[-1])
-                self.data['Thermocouple_1_C'].append(self.labjack_handler.TC_one_Data[-1])
-                self.data['Thermocouple_2_C'].append(self.labjack_handler.TC_two_Data[-1])
-            else:
-                self.data['Actuator_Force_N'].append(nan)
-                self.data['Thermocouple_1_C'].append(nan)
-                self.data['Thermocouple_2_C'].append(nan)
+            self.data['Actuator_Force_N'].append(self.labjack_handler.reporting_handler.avg_force)
+            self.data['Thermocouple_1_C'].append(self.labjack_handler.reporting_handler.avg_tc1)
+            self.data['Thermocouple_2_C'].append(self.labjack_handler.reporting_handler.avg_tc2)
 
-            time.sleep(1)   # collect every 1 second
+            time.sleep(self.collection_time)
