@@ -2,10 +2,7 @@
 mini_afsd
 =========
 
-mini_afsd is a program for controlling a miniturized additive friction stir deposition (AFSD) machine.
-
-* For Python 3.7+
-* Source Code: https://github.com/RyTheGuy355/MiniAFSDCode
+mini_afsd is a program for controlling a miniaturized additive friction stir deposition (AFSD) machine.
 
 
 .. contents:: **Contents**
@@ -15,7 +12,7 @@ mini_afsd is a program for controlling a miniturized additive friction stir depo
 Introduction
 ------------
 
-This repository contains code for controlling a miniturized AFSD machine and
+This repository contains code for controlling a miniaturized AFSD machine and
 is used by the `Yu group at Virginia Tech <https://yu.mse.vt.edu>`_.
 
 Communication with the machine is achieved using `FluidNC <https://github.com/bdring/FluidNC>`_,
@@ -48,10 +45,11 @@ https://oemdrivers.com/usb-cp2104-usb-to-uart-driver.
 Python Dependencies
 ^^^^^^^^^^^^^^^^^^^
 
-mini_afsd requires `Python <https://python.org>`_ version 3.7 or later
+mini_afsd requires `Python <https://python.org>`_ version 3.10 or later
 and the following Python libraries:
 
 * `labjack-ljm <https://pypi.org/project/labjack-ljm/>`_
+* `NumPy <https://numpy.org>`_
 * `matplotlib <https://pypi.org/project/matplotlib/>`_ (>=3.4)
 * `pyserial <https://pypi.org/project/pyserial/>`_
 
@@ -134,14 +132,46 @@ Alternatively, mini_afsd can be used from a Python file by doing the following:
     Controller().run()
 
 
-Contributing
-------------
+Configuring LabJack
+-------------------
 
-Contributions are welcomed and greatly appreciated. For information on
-submitting bug reports, pull requests, or general feedback, please refer
-to the `contributing guide`_.
+For determining proper addresses to connections on the LabJack, use
+the Kipling software included with LJM to find the pin addresses within
+the "Register Matrix" section.
 
-.. _contributing guide: https://github.com/RyTheGuy355/MiniAFSDCode/tree/main/docs/contributing.rst
+Sending Commands to FluidNC
+---------------------------
+
+Commands sent from the GUI to FluidNC for control of the mill can be split into 2 categories:
+
+1) G-Code (and subsequent M-Codes, etc.): These are prefixed by "G", "M", etc., and follow their
+   standard usage. See http://wiki.fluidnc.com/en/features/supported_gcodes for the G-Codes
+   supported by FluiNC.
+
+2) Codes to FluiNC or Grbl. These can include things liking homing ("$H"), status query ("?"), or
+   soft reset ("0x18" == "CTRL+X"). When adding new commands under this category, it is recommended
+   to add a comment as to what these commands are doing since it is not immediately clear and makes
+   maintenance difficult. A full listing of commands can be found at
+   http://wiki.fluidnc.com/en/features/commands_and_settings.
+
+Log Files
+---------
+
+While the program is running, it is set up to automatically log messages sent and received from
+the mill for later reference/debugging. In addition, if data collection was turned on and the
+data was not subsequently saved, the data is automatically saved in order to prevent losing data.
+
+The folder where these logs and data files are saved can be found by running the following within
+a Python file:
+
+.. code-block:: python
+
+    from mini_afsd.controller import get_save_location
+
+    print(get_save_location())
+
+On Windows, this folder location likely corresponds to the local AppData folder,
+ie. ``%localappdata%/mini_afsd``.
 
 
 License
@@ -155,4 +185,4 @@ mini_afsd is all rights reserved. For more information, refer to the license_.
 Author
 ------
 
-* Ryan Gottwald <insert_email_here>
+* Ryan Gottwald

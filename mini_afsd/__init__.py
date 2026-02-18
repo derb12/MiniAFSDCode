@@ -8,7 +8,7 @@ machine with both a user interface and a serial port and Labjack data collector.
 
 """
 
-__version__ = '1.2.1'
+__version__ = '1.3.0'
 
 
 # have to import controller last since it imports from the other two files

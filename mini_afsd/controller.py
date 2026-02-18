@@ -36,15 +36,17 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 """
 
+from collections import defaultdict
 import csv
 from datetime import datetime
-import itertools
 import logging
 import os
 from pathlib import Path
 import sys
-from threading import Event
+import time
+from threading import Event, Thread
 import tkinter as tk
+import traceback
 
 import serial
 from serial.tools import list_ports
@@ -75,6 +77,7 @@ def get_save_location():
     ----------
     https://stackoverflow.com/questions/1024114/location-of-ini-config-files-in-linux-unix,
     https://specifications.freedesktop.org/basedir-spec/latest/
+
     """
     path = None
     if sys.platform.startswith('win'):  # Windows
@@ -123,22 +126,14 @@ class Controller:
         is the os-dependent output of `get_save_location`.
     """
 
-    def __init__(self, xyStepsPerMil=40, xyPulPerStep=2, aStepsPerMil=1020,
-                 aPulPerStep=4, port_regex='(CP21)', connect_serial=True, confirm_run=True,
-                 skip_home=False, averaged_points=10, allow_testing=False):
+    def __init__(self, port_regex='(CP21)', connect_serial=True, confirm_run=True,
+                 skip_home=False, allow_testing=False, graph_time=60.0, collection_time=0.5,
+                 labjack_polling=0.2, tc_time=2.0, show_average=False):
         """
         Initializes the object.
 
         Parameters
         ----------
-        xyStepsPerMil : int, optional
-            _description_. Default is 40.
-        xyPulPerStep : int, optional
-            _description_. Default is 2.
-        aStepsPerMil : int, optional
-            _description_. Default is 1020.
-        aPulPerStep : int, optional
-            _description_. Default is 4.
         port_regex : str, optional
             The regular expression to use for searching for the port to use. Default
             is '(CP21)'.
@@ -154,15 +149,35 @@ class Controller:
             be ready to send commands. If False (default), b'$X' or b'$H' (home)
             will have to be sent manually through the serial port to begin using
             the mill.
+        allow_testing : bool, optional
+            If True, will spawn an emulators of the serial port and LabJack for testing
+            purposes if no actual serial port or LabJack is found upon start-up. Default
+            is False, which will not spawn emulators.
+        graph_time : float, optional
+            The time in seconds to retain collected force and temperature data for plotting.
+            Default is 60 seconds.
+        collection_time : float, optional
+            The time in seconds for between data points when saving measured data to a file.
+            Default is 0.5 second.
+        labjack_polling : float, optional
+            The time in seconds between polling the LabJack. Default is 0.2 seconds.
+        tc_time : float, optional
+            The time in seconds for the rolling average of the thermocouple values
+            reported within the GUI text. Default is 2 seconds.
+        show_average : bool, optional
+            If True, will display the rolling average of connected thermocouples within
+            the GUI's plot. Default is False.
+
         """
-        self.xyPulPerMil = xyStepsPerMil * xyPulPerStep
-        self.aPulPerMil = aStepsPerMil * aPulPerStep
         self.running = Event()
         self.collecting = Event()
         self.readTempData = Event()
         self.cache_folder = get_save_location()
         self.log_folder = self.cache_folder.joinpath('Logs')
-        self.log_folder.mkdir(exist_ok=True)
+        self.log_folder.mkdir(exist_ok=True, parents=True)
+        self._testing_mode = allow_testing
+        self.collection_time = collection_time
+        self.data = None
 
         formatter = logging.Formatter('%(message)s')
         self.logger = logging.getLogger('mini-afsd')
@@ -181,10 +196,17 @@ class Controller:
 
         self.root = tk.Tk()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-        self.gui = Gui(self, confirm_run=confirm_run)
+        self.gui = Gui(
+            self, confirm_run=confirm_run, show_average=show_average
+        )
 
-        self.serial_processor = SerialProcessor(self, None, skip_home, allow_testing)
-        self.labjack_handler = LabjackHandler(self, averaged_points, allow_testing)
+        self.serial_processor = SerialProcessor(
+            self, port=None, skip_home=skip_home, allow_testing=allow_testing
+        )
+        self.labjack_handler = LabjackHandler(
+            self, tc_time=tc_time, graph_time=graph_time, polling=labjack_polling,
+            collection_time=collection_time, allow_testing=allow_testing
+        )
 
         if connect_serial:
             matching_ports = list(list_ports.grep(port_regex))
@@ -205,7 +227,7 @@ class Controller:
     @cache_folder.setter
     def cache_folder(self, folder):
         """
-        Sets the cache folder and converts it to a Path.
+        Sets the cache folder and creates it if needed.
 
         Parameters
         ----------
@@ -213,6 +235,7 @@ class Controller:
             The folder path for saving unsaved data files.
         """
         self._cache_folder = Path(folder)
+        self._cache_folder.mkdir(exist_ok=True, parents=True)
 
     def update_serial_port(self, port=None):
         """
@@ -277,7 +300,7 @@ class Controller:
 
     def on_closing(self):
         """Tries to save unsaved data before closing."""
-        if not self.labjack_handler.timeData:
+        if not self.data:
             self.closeAll()
         else:
             askSaveWin = tk.Toplevel(self.root, takefocus=True)
@@ -323,41 +346,26 @@ class Controller:
 
     def return_data(self):
         """Collects the current force and thermocouple data."""
-        if self.labjack_handler.labjackHandle is not None:
-            combinedData = itertools.chain.from_iterable((
-                [['Time (s)', 'Force (N)', 'Thermocouple 1 (degrees C)',
-                  'Thermocouple 2 (degrees C)']],
-                zip(
-                    self.labjack_handler.timeData,
-                    self.labjack_handler.forceData,
-                    self.labjack_handler.TC_one_Data,
-                    self.labjack_handler.TC_two_Data
-                )
-            ))
-        else:
-            combinedData = None  # reached if not connected to anything
-
-        return combinedData
+        return self.data
 
     def clear_data(self):
         """Clears all force and thermocouple data from the serial port and LabJack."""
-        self.serial_processor.clear_data()
-        self.labjack_handler.clear_data()
+        self.data = None
 
     def save_temp_file(self):
         """Caches force and thermocouple data when done collecting data to ensure data recovery."""
         combinedData = self.return_data()
         if combinedData is not None:
-            self._cache_folder.mkdir(exist_ok=True, parents=True)
             try:
                 output_file = self.cache_folder.joinpath(
                     datetime.now().strftime('%Y-%m-%d %H-%M-%S.csv')
                 )
-                with open(output_file, 'w', newline='') as f:
-                    writer = csv.writer(f)
-                    writer.writerows(combinedData)
+                self.write_output(output_file, combinedData)
             except PermissionError:
                 pass  # silently ignore permission error when caching data
+            except Exception:
+                self.logger.warning('WARNING: Failed to save temporary data file.')
+                self.logger.warning(traceback.format_exc())
             else:
                 # try to remove all but the newest 10 files
                 # default sort works since file names use ISO8601 date format
@@ -366,3 +374,48 @@ class Controller:
                         old_file.unlink()
                     except Exception:
                         pass
+
+    def write_output(self, output_file, data):
+        """Defines how output data should be saved.
+
+        Parameters
+        ----------
+        output_file : str or os.Pathlike
+            The file location to save the output.
+        data : dict[str, list]
+            The data to be saved. Should be a dictionary containing the file headers as
+            keys and relevant data as lists. See `collection_thread` for how this data should
+            look like.
+
+        """
+        with open(output_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(data.keys())
+            writer.writerows(zip(*data.values()))
+
+    def start_collection_thread(self):
+        """Spawns a thread for collecting machine data."""
+        self.col_thread = Thread(target=self.collection_thread, daemon=True)
+        self.col_thread.start()
+
+    def collection_thread(self):
+        """Collects machine position and Labjack data for saving later."""
+        self.data = defaultdict(list)
+        start_time = datetime.now()
+        while self.collecting.is_set():
+            now = datetime.now()
+            self.data['Date'].append(now.strftime('%Y-%m-%d'))
+            self.data['Time'].append(now.strftime('%H:%M:%S'))
+            self.data['time_step_s'].append((now - start_time).total_seconds())
+            self.data['Spindle_Speed_RPM'].append(float(self.gui.spindle_speed.get()))
+            self.data['Feed_Rate_Override'].append(float(self.gui.feed_override.get().strip('%')))
+            # have to cast position values as floats to get rid of "+" signs
+            self.data['X_Pos_mm'].append(float(self.gui.xRelVar.get()))
+            self.data['Y_Pos_mm'].append(float(self.gui.yRelVar.get()))
+            self.data['Z_Pos_mm'].append(float(self.gui.zRelVar.get()))
+            self.data['Actuator_Pos_mm'].append(float(self.gui.aRelVar.get()))
+            self.data['Actuator_Force_N'].append(self.labjack_handler.reporting_handler.avg_force)
+            self.data['Thermocouple_1_C'].append(self.labjack_handler.reporting_handler.avg_tc1)
+            self.data['Thermocouple_2_C'].append(self.labjack_handler.reporting_handler.avg_tc2)
+
+            time.sleep(self.collection_time)

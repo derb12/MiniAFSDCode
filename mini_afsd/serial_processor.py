@@ -38,15 +38,20 @@ class SerialProcessor:
 
         Parameters
         ----------
-        controller : _type_
-            _description_
-        port : _type_, optional
-            _description_, by default None
+        controller : Controller
+            The controller for this object.
+        port : str, optional
+            The port to connect to. Default is None, which will not connect to a port.
+            If a port is given, will try to connect upon initialization.
         skip_home : bool, optional
             If True, the serial port will send b'$X' to skip homing and directly
             be ready to send commands. If False (default), b'$X' or b'$H' (home)
             will have to be sent manually through the serial port to begin using
             the mill.
+        allow_testing : bool, optional
+            If True, will spawn an emulator of the serial port for testing purposes.
+            Default is False, which will not spawn an emulator.
+
         """
         self.controller = controller
         self.esp = None
@@ -66,7 +71,6 @@ class SerialProcessor:
         self.serialWriteUnlocked.set()
         self.state_exact = threading.Event()
 
-        self.forceData = []
         self.espBuffer = []
         self.espTypeBuffer = []
 
@@ -257,12 +261,28 @@ class SerialProcessor:
         work_position = None
         buffer_length = None
         total_message = message.decode().split('|')
-        feed_speed = None
+        feed_override = None
+        spindle_override = None
         spindle_speed = None
-        if len(total_message) < 2:  # accidently received b'ok'
+        if len(total_message) < 2:  # accidentally received b'ok'
             return
-        # message is sent as
-        # b'<state|machine positions: x, y, z, a|BF:buffer size|FS:?,?|Work positions(optional):x,y,z,a>'
+        # See https://github.com/gnea/grbl/wiki/Grbl-v1.1-Interface#real-time-status-reports for detailed
+        # explanations of the status report sent by the machine
+        #
+        # A typical message is received as
+        # b'<state|MPos:x,y,z,a|BF:#,#|FS:#,#|WCO:x,y,z,a>'
+        # where "state" can be Idle, Run, Hold, Jog, Alarm, Door, Check, Home, Sleep,
+        # and possible headers including:
+        # MPos == machine position
+        # WCO == work coordinate offsets
+        # WPos == work position, where WPos = MPos - WCO
+        # Bf == machine buffer state; first value denoates available machine buffer (ie. how
+        # many commands it can receive)
+        # Ov == override values; typically Ov:100,100,100; denotes override values for feed (G1,
+        # G2, G3 motion), rapid (G0 motion), and spindle, respectively, in percentages
+        # FS (or just F) == current feed rate (F) and potentially spindle speed
+        # Pn == input pin states; ignored here
+        # Note that not all headers may be included in each message
         total_message[0] = total_message[0].lstrip('<')
         total_message[-1] = total_message[-1].rstrip('>')
         old_state = self.state
@@ -270,7 +290,6 @@ class SerialProcessor:
             if ':' not in entry:
                 self.state = entry
             else:
-                # headers are 'MPos', 'Bf', 'FS', 'WCO', 'Ov', 'Pn'
                 try:
                     header, values = entry.split(':')
                 except ValueError:  # message has multiple : at startup
@@ -282,10 +301,10 @@ class SerialProcessor:
                     work_position = [float(val) for val in values.split(',')]
                 elif header == 'Bf':
                     buffer_length = int(values.split(',')[0])
-                elif header == 'Ov':  # typically Ov:100,100,100
-                    # override values for feed (G1,G2,G3 motion), rapid (G0 motion), and spindle
-                    # in percentages
-                    feed_speed, _, spindle_speed = [int(val) for val in values.split(',')]
+                elif header == 'Ov':
+                    feed_override, _, spindle_override = [int(val) for val in values.split(',')]
+                elif header == 'FS':
+                    spindle_speed = int(values.split(',')[-1])
         # print(message.decode())
         if machine_position is not None:
             machine_x = machine_position[0]
@@ -332,15 +351,17 @@ class SerialProcessor:
             elif self.state == 'Alarm':
                 self.controller.gui.resetBut.configure(fg='black', state='normal')
 
-        if feed_speed is not None:
-            self.controller.gui.feed_var.set(f'{feed_speed}%')
-            self.controller.gui.spindle_var.set(f'{spindle_speed}%')
+        if feed_override is not None:
+            self.controller.gui.feed_override.set(f'{feed_override}%')
+            self.controller.gui.spindle_override.set(f'{spindle_override}%')
+        if spindle_speed is not None:
+            self.controller.gui.spindle_speed.set(f'{spindle_speed}')
 
         self.controller.gui.stateVar.set(self.state)
         self.state_exact.set()
 
     def status_update(self):
-        """Sends and receives querries to the port to receive the position and state of the mill."""
+        """Sends and receives queries to the port to receive the position and state of the mill."""
         while not self.close_port.wait(timeout=0.5):
             if not self.controller.running.wait(timeout=0.5):
                 continue
@@ -356,10 +377,6 @@ class SerialProcessor:
                 pass
             self.serialReadUnlocked.set()
             self.serialWriteUnlocked.set()
-
-    def clear_data(self):
-        """Cleans up all of the collected data."""
-        self.forceData.clear()
 
     def close(self):
         """Ensures the serial port is closed correctly."""
@@ -422,6 +439,7 @@ class DummySerial:
         self.offsets = (0, 0, 0, 0)
         # speeds for feed (G1,G2,G3 motion), rapid (G0 motion), and spindle
         self.speeds = [100, 100, 100]
+        self.spindle = 0.0
 
         self._read_thread = threading.Thread(target=self.main_loop, daemon=True)
         self._read_thread.start()
@@ -459,6 +477,8 @@ class DummySerial:
                     if self.state != 'Jog':
                         self.state = 'Run'
                         self.buffer = self.buffer - 1
+                        if message[0] == 'S':
+                            self.spindle = float(message.split(' ')[0][1:])
                     else:
                         output = b'error:9'
                 elif message.startswith('$'):
@@ -479,12 +499,16 @@ class DummySerial:
                     self.speeds[0] -= 1
                 elif message == '9a':  # b'\x9A' increase spindle rate by 10%
                     self.speeds[2] += 10
+                    self.spindle *= 1.1
                 elif message == '9b':  # b'\x9B' decrease spindle rate by 10%
                     self.speeds[2] -= 10
+                    self.spindle *= 0.9
                 elif message == '9c':  # b'\x9C' increase spindle rate by 1%
                     self.speeds[2] += 1
+                    self.spindle *= 1.01
                 elif message == '9d':  # b'\x9D' decrease spindle rate by 1%
                     self.speeds[2] -= 1
+                    self.spindle *= 0.99
                 elif message == '?':
                     if self.state not in ('Idle', 'Alarm'):
                         self.machine_position = (
@@ -497,7 +521,7 @@ class DummySerial:
                             random.uniform(0, 3),
                             random.uniform(0, 3)
                         )
-                    output = f'<{self.state}|MPos:{self.machine_position[0]:.3f},{self.machine_position[1]:.3f},{self.machine_position[2]:.3f},{self.machine_position[3]:.3f}|Bf:{self.buffer},127|FS:0,0>'
+                    output = f'<{self.state}|MPos:{self.machine_position[0]:.3f},{self.machine_position[1]:.3f},{self.machine_position[2]:.3f},{self.machine_position[3]:.3f}|Bf:{self.buffer},127|FS:0,{self.spindle:.0f}>'
                     if random.choice([0, 0, 0, 1]):
                         output = output[:-1] + f'|WCO:{self.offsets[0]:.3f},{self.offsets[1]:.3f},{self.offsets[2]:.3f},{self.offsets[3]:.3f}>'
                     elif random.choice([0, 0, 0, 1]):
