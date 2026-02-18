@@ -13,7 +13,7 @@ To bump the version:
 
 .. code-block:: console
 
-    python -m  bump-my-version [version]
+    bump-my-version [version]
 
 where [version] is major if moving from 1.0.0 to 2.0.0, minor if moving from 1.0.0 to 1.1.0, and patch if moving from 1.0.0 to 1.0.1.
 

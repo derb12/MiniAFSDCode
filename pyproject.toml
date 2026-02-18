@@ -52,7 +52,6 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/RyTheGuy355/MiniAFSDCode"
-Documentation = "https://mini_afsd.readthedocs.io"
 
 [project.optional-dependencies]
 release = [
@@ -61,3 +60,18 @@ release = [
     "twine",
 ]
 
+[tool.bumpversion]
+current_version = "1.2.1"
+commit = false
+tag = false
+message = "Bump version: {current_version} -> {new_version}"
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = "version = \"{current_version}\""
+replace = "version = \"{new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "mini_afsd/__init__.py"
+search = "__version__ = '{current_version}'"
+replace = "__version__ = '{new_version}'"
