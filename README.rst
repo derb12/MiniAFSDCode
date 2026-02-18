@@ -2,7 +2,7 @@
 mini_afsd
 =========
 
-mini_afsd is a program for controlling a miniturized additive friction stir deposition (AFSD) machine.
+mini_afsd is a program for controlling a miniaturized additive friction stir deposition (AFSD) machine.
 
 
 .. contents:: **Contents**
@@ -12,7 +12,7 @@ mini_afsd is a program for controlling a miniturized additive friction stir depo
 Introduction
 ------------
 
-This repository contains code for controlling a miniturized AFSD machine and
+This repository contains code for controlling a miniaturized AFSD machine and
 is used by the `Yu group at Virginia Tech <https://yu.mse.vt.edu>`_.
 
 Communication with the machine is achieved using `FluidNC <https://github.com/bdring/FluidNC>`_,

@@ -1,7 +1,7 @@
 [build-system]
 # hatchling v1.27 was first version to use default metadata version 2.4, allowing project.license
 # and project.license-files fields following PEP-639
-requires = ["hatchling>=1.27", "hatch-vcs"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 
@@ -15,7 +15,7 @@ authors = [
 maintainers = [
     {name = "Donald Erb", email = "derb15@vt.edu"},
 ]
-description = "A program for controlling a miniturized additive friction stir deposition (AFSD) machine."
+description = "A program for controlling a miniaturized additive friction stir deposition (AFSD) machine."
 readme = "README.rst"
 license-files = [
     "LICENSE.txt"
