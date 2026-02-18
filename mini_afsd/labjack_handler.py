@@ -78,7 +78,7 @@ class DataHandler:
 class LabjackHandler:
     """An object for communicating with a LabJack."""
 
-    def __init__(self, controller, tc_time=5., graph_time=60., polling=0.2, collection_time=1.,
+    def __init__(self, controller, tc_time=2.0, graph_time=60.0, polling=0.2, collection_time=0.5,
                  allow_testing=False):
         """
         Initializes the Labjack handler.
@@ -89,7 +89,7 @@ class LabjackHandler:
             The controller for this object.
         tc_time : float, optional
             The time in seconds for the rolling average of the thermocouple values
-            reported within the GUI text. Default is 5 seconds.
+            reported within the GUI text. Default is 2 seconds.
         graph_time : float, optional
             The time in seconds to retain collected force and temperature data for plotting.
             Default is 60 seconds.
@@ -97,7 +97,7 @@ class LabjackHandler:
             The time in seconds between polling the LabJack. Default is 0.2 seconds.
         collection_time : float, optional
             The time in seconds for performing the rolling average of measured values
-            that will be subsequently written to a file. Default is 1 second.
+            that will be subsequently written to a file. Default is 0.5 seconds.
         allow_testing : bool, optional
             If True, will spawn an emulator of a Labjack for testing purposes if no
             actual Labjack is found upon start-up. Default is False, which will not

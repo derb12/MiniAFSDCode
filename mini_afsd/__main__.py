@@ -45,25 +45,25 @@ def main():
         help='If specified, will send b"$X" to skip having the home the mill before use.'
     )
     parser.add_argument(
-        '--graph_time', '-GT', default=60., type=float,
+        '--graph_time', '-GT', default=60.0, type=float,
         help=(
             'The maximum amount of time in seconds to include when plotting force and '
             'temperature data. Default is 60 seconds.'
         )
     )
     parser.add_argument(
-        '--collection_time', '-CT', default=1., type=float,
-        help='The time step in seconds for recording data. Default is 1 second.'
+        '--collection_time', '-CT', default=0.5, type=float,
+        help='The time step in seconds for recording data. Default is 0.5 seconds.'
     )
     parser.add_argument(
         '--labjack_polling', '-LP', default=0.2, type=float,
         help='The step in seconds for the LabJack polling. Default is 0.2 seconds.'
     )
     parser.add_argument(
-        '--tc_time', '-TcT', default=5., type=float,
+        '--tc_time', '-TcT', default=2.0, type=float,
         help=(
             'The time in seconds for computing the rolling average of thermocouple values '
-            'within the GUI. Default is 5 seconds.'
+            'within the GUI. Default is 2 seconds.'
         )
     )
     parser.add_argument(

@@ -127,8 +127,8 @@ class Controller:
     """
 
     def __init__(self, port_regex='(CP21)', connect_serial=True, confirm_run=True,
-                 skip_home=False, allow_testing=False, graph_time=60., collection_time=1.,
-                 labjack_polling=0.2, tc_time=5., show_average=False):
+                 skip_home=False, allow_testing=False, graph_time=60.0, collection_time=0.5,
+                 labjack_polling=0.2, tc_time=2.0, show_average=False):
         """
         Initializes the object.
 
@@ -158,12 +158,12 @@ class Controller:
             Default is 60 seconds.
         collection_time : float, optional
             The time in seconds for between data points when saving measured data to a file.
-            Default is 1 second.
+            Default is 0.5 second.
         labjack_polling : float, optional
             The time in seconds between polling the LabJack. Default is 0.2 seconds.
         tc_time : float, optional
             The time in seconds for the rolling average of the thermocouple values
-            reported within the GUI text. Default is 5 seconds.
+            reported within the GUI text. Default is 2 seconds.
         show_average : bool, optional
             If True, will display the rolling average of connected thermocouples within
             the GUI's plot. Default is False.
