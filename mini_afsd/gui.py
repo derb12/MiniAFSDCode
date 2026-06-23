@@ -312,9 +312,10 @@ class Gui:
             width=7,
             pady=5,
             bg="#8f8f8f",
-            fg="black",
+            fg="grey",
             relief="raised",
             command=lambda: self.zeroCord(b'X'),
+            state='disabled'
         )
         zeroXBut.grid(column=3, row=1, in_=posFrame, pady=5, padx=5)
 
@@ -324,9 +325,10 @@ class Gui:
             width=7,
             pady=5,
             bg="#8f8f8f",
-            fg="black",
+            fg="grey",
             relief="raised",
             command=lambda: self.zeroCord(b"Y"),
+            state='disabled'
         )
         zeroYBut.grid(column=3, row=2, in_=posFrame, pady=5)
 
@@ -336,9 +338,10 @@ class Gui:
             width=7,
             pady=5,
             bg="#8f8f8f",
-            fg="black",
+            fg="grey",
             relief="raised",
             command=lambda: self.zeroCord(b"Z"),
+            state='disabled'
         )
         zeroZBut.grid(column=3, row=3, in_=posFrame, pady=5)
 
@@ -360,9 +363,10 @@ class Gui:
             width=7,
             pady=5,
             bg="#8f8f8f",
-            fg="black",
+            fg="grey",
             relief="raised",
-            command=lambda: self.sendCode(b'$HX', False)
+            command=lambda: self.sendCode(b'$HX', False),
+            state='disabled'
         )
         homeXBut.grid(column=4, row=1, in_=posFrame, pady=5, padx=5)
 
@@ -372,9 +376,10 @@ class Gui:
             width=7,
             pady=5,
             bg="#8f8f8f",
-            fg="black",
+            fg="grey",
             relief="raised",
-            command=lambda: self.sendCode(b"$HY", False)
+            command=lambda: self.sendCode(b"$HY", False),
+            state='disabled'
         )
         homeYBut.grid(column=4, row=2, in_=posFrame, pady=5)
 
@@ -384,9 +389,10 @@ class Gui:
             width=7,
             pady=5,
             bg="#8f8f8f",
-            fg="black",
+            fg="grey",
             relief="raised",
-            command=lambda: self.sendCode(b"$HZ", False)
+            command=lambda: self.sendCode(b"$HZ", False),
+            state='disabled'
         )
         homeZBut.grid(column=4, row=3, in_=posFrame, pady=5)
 
@@ -408,9 +414,10 @@ class Gui:
             width=7,
             pady=5,
             bg="#91ceff",
-            fg="black",
+            fg="grey",
             relief="raised",
-            command=lambda: self.sendCode(b"$H", False)
+            command=lambda: self.sendCode(b"$H", False),
+            state='disabled'
         )
         homeAllBut.grid(column=4, row=5, in_=posFrame, pady=5, rowspan=2, sticky=tk.NS)
 
@@ -1188,16 +1195,11 @@ class Gui:
         if self.controller.serial_processor.esp is not None:
             # copy so that the values do not update while using
             current_offsets = self.controller.serial_processor.work_offsets.copy()
-            current_position = (
-                float(self.xAbsVar.get()) - current_offsets[0],
-                float(self.yAbsVar.get()) - current_offsets[1],
-                float(self.zAbsVar.get()) - current_offsets[2],
-                float(self.aAbsVar.get()) - current_offsets[3],
-            )
+            current_position = float(self.aAbsVar.get()) - current_offsets[3]
 
             self.sendCode(b'\x18', False),  # \x18 == 0x18 == CTRL+X -> Soft reset
             self.sendCode(b'$X', False),  # alarm disable
-            self.sendCode('G92 X{0} Y{1} Z{2} A{3}'.format(*current_position).encode(), False)
+            self.sendCode('G92 A{0}'.format(current_position).encode(), False)  # can only set actuator
 
     def startTC(self):
         """Attempts to connect to LabJack thermocouples."""
